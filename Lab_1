@@ -1,0 +1,85 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import soundfile as sf
+import librosa
+import librosa.display
+import scipy.signal as signal
+import simpleaudio as sa
+
+# Load the speech file (Provide file path)
+file_path = '/content/LJ050-0267.wav'  # Replace with actual file path
+audio, sample_rate = librosa.load(file_path, sr=None)
+
+# Display basic information
+num_samples = len(audio)
+duration = num_samples / sample_rate
+print(f'Sample Rate: {sample_rate} Hz')
+print(f'Number of Samples: {num_samples}')
+print(f'Duration: {duration:.2f} seconds')
+
+# Plot the waveform
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(audio, sr=sample_rate)
+plt.title('Waveform of Speech Signal')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.show()
+
+# Slicing: Extract the first 2 seconds
+slice_duration = 2  # seconds
+slice_samples = sample_rate * slice_duration
+sliced_audio = audio[:slice_samples]
+
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(sliced_audio, sr=sample_rate)
+plt.title('Sliced Speech Signal (First 2 sec)')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.show()
+
+# Normalization
+normalized_audio = sliced_audio / np.max(np.abs(sliced_audio))
+
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(normalized_audio, sr=sample_rate)
+plt.title('Normalized Speech Signal')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.show()
+
+# Amplification and De-amplification
+amplified_audio = sliced_audio * 2
+deamplified_audio = sliced_audio * 0.5
+
+# Up-sampling (Increase sample rate)
+upsampled_audio = signal.resample(audio, len(audio) * 2)
+upsampled_rate = sample_rate * 2
+
+# Down-sampling (Reduce sample rate)
+downsampled_audio = signal.resample(audio, len(audio) // 2)
+downsampled_rate = sample_rate // 2
+
+# Plot amplified and de-amplified signals
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(amplified_audio, sr=sample_rate)
+plt.title('Amplified Speech Signal')
+plt.show()
+
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(deamplified_audio, sr=sample_rate)
+plt.title('De-Amplified Speech Signal')
+plt.show()
+
+# Plot upsampled and downsampled signals
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(upsampled_audio, sr=upsampled_rate)
+plt.title('Up-sampled Speech Signal')
+plt.show()
+
+plt.figure(figsize=(10, 4))
+librosa.display.waveshow(downsampled_audio, sr=downsampled_rate)
+plt.title('Down-sampled Speech Signal')
+plt.show()
+
+# Play the original audio
+wave_obj = sa.WaveObject(audio, 1, 2, sample_rate)
