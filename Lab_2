@@ -1,0 +1,46 @@
+import torchaudio
+import librosa
+import librosa.display
+import matplotlib.pyplot as plt
+import torch
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
+import numpy as np
+
+# Load the pre-trained Wav2Vec2 model and processor
+processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
+model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
+
+# Load the speech file
+file_path = '/content/LJ050-0001.wav'  # Replace with actual file path
+audio, sample_rate = librosa.load(file_path, sr=16000, mono=True)
+
+def plot_waveform(signal, title="Waveform"):
+    plt.figure(figsize=(10, 4))
+    librosa.display.waveshow(signal, sr=16000)
+    plt.title(title)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    plt.show()
+
+# Plot original waveform
+plot_waveform(audio, "Original Speech Signal")
+
+# Convert speech signal to tensor
+input_values = processor(audio, return_tensors="pt", sampling_rate=16000).input_values
+
+# Perform phoneme recognition
+with torch.no_grad():
+    logits = model(input_values).logits
+
+# Decode the recognized phonemes
+predicted_ids = torch.argmax(logits, dim=-1)
+transcription = processor.batch_decode(predicted_ids)
+print("Recognized Phonemes:", transcription)
+
+# Extract a phoneme segment (Example: First 0.5 - 1 sec of speech)
+start_time, end_time = 0.5, 1.0
+start_sample, end_sample = int(start_time * sample_rate), int(end_time * sample_rate)
+phoneme_segment = audio[start_sample:end_sample]
+
+# Plot the extracted phoneme waveform
+plot_waveform(phoneme_segment, "Extracted Phoneme Waveform")
