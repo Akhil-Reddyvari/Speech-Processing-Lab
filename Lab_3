@@ -1,0 +1,121 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import librosa
+import librosa.display
+
+# ----------------------------
+# Experiment 1: Fourier Transform and STFT
+# ----------------------------
+
+# Load the speech waveform from the LJ Speech dataset
+file_path = '/LJ050-0268.wav'  # Replace with your file path
+audio, sample_rate = librosa.load(file_path, sr=None)  # Using original sample rate
+
+# ---- Experiment 1A: Fourier Transform ----
+
+# Time axis for the waveform plot
+time = np.linspace(0, len(audio) / sample_rate, num=len(audio))
+
+# Compute FFT
+fft_data = np.fft.fft(audio)
+# Frequency bins corresponding to FFT result
+freqs = np.fft.fftfreq(len(fft_data), 1 / sample_rate)
+
+# Only consider positive frequencies for visualization
+positive_freqs = freqs[:len(freqs)//2]
+fft_magnitude = np.abs(fft_data)[:len(fft_data)//2]
+
+# Plot time-domain waveform
+plt.figure(figsize=(12, 4))
+plt.plot(time, audio)
+plt.title('Time-Domain Speech Signal')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.tight_layout()
+plt.show()
+
+# Plot frequency-domain representation (FFT Magnitude Spectrum)
+plt.figure(figsize=(12, 4))
+plt.plot(positive_freqs, fft_magnitude)
+plt.title('Frequency Spectrum (FFT) of Speech Signal')
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Magnitude')
+plt.xlim(0, sample_rate/2)
+plt.tight_layout()
+plt.show()
+
+# ---- Experiment 1B: Short-Time Fourier Transform (STFT) ----
+
+# Compute the STFT (default n_fft=2048, hop_length=512)
+D = librosa.stft(audio)
+# Convert amplitude to decibels (dB)
+D_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
+
+# Plot the spectrogram
+plt.figure(figsize=(12, 5))
+librosa.display.specshow(D_db, sr=sample_rate, x_axis='time', y_axis='hz', cmap='viridis')
+plt.colorbar(format='%+2.0f dB')
+plt.title('STFT Spectrogram (dB) of Speech Signal')
+plt.tight_layout()
+plt.show()
+
+# ----------------------------
+# Experiment 2: Energy Distribution in Vowels and Consonants
+# ----------------------------
+
+# For this experiment, we assume a phoneme segment exists in the speech file.
+# (Example: Extract a segment from 1.0s to 1.5s, adjust time interval based on your data)
+start_time = 1.0  # in seconds
+end_time = 1.5    # in seconds
+start_sample = int(start_time * sample_rate)
+end_sample = int(end_time * sample_rate)
+phoneme_segment = audio[start_sample:end_sample]
+
+# Plot the phoneme segment waveform
+plt.figure(figsize=(12, 4))
+time_segment = np.linspace(start_time, end_time, num=len(phoneme_segment))
+plt.plot(time_segment, phoneme_segment)
+plt.title('Phoneme Segment Waveform')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.tight_layout()
+plt.show()
+
+# Compute STFT for the phoneme segment (using same parameters)
+n_fft = 2048
+hop_length = 512
+D_segment = librosa.stft(phoneme_segment, n_fft=n_fft, hop_length=hop_length)
+D_segment_db = librosa.amplitude_to_db(np.abs(D_segment), ref=np.max)
+
+# Plot the spectrogram for the phoneme segment
+plt.figure(figsize=(12, 5))
+librosa.display.specshow(D_segment_db, sr=sample_rate, hop_length=hop_length, x_axis='time', y_axis='hz', cmap='magma')
+plt.colorbar(format='%+2.0f dB')
+plt.title('Spectrogram of Phoneme Segment')
+plt.tight_layout()
+plt.show()
+
+# Compute Energy Distribution in Different Frequency Bands
+# Get frequency bins corresponding to the STFT
+freq_bins = librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)
+
+# Compute the power spectrogram (magnitude squared)
+power_spec = np.abs(D_segment) ** 2
+
+# Define frequency bands for vowels (low frequency: 300–3000 Hz) and fricatives (high frequency: 4000–8000 Hz)
+vowel_band = (freq_bins >= 300) & (freq_bins <= 3000)
+fricative_band = (freq_bins >= 4000) & (freq_bins <= 8000)
+
+# Sum the energy over time and within the specified frequency bands
+energy_vowels = np.sum(power_spec[vowel_band, :])
+energy_fricatives = np.sum(power_spec[fricative_band, :])
+
+# Compute the energy ratio between vowels and fricatives (consonants)
+if energy_fricatives > 0:
+    energy_ratio = energy_vowels / energy_fricatives
+else:
+    energy_ratio = np.inf
+
+print("Energy in vowels (300-3000 Hz):", energy_vowels)
+print("Energy in fricatives (4000-8000 Hz):", energy_fricatives)
+print("Energy Ratio (Vowels / Fricatives):", energy_ratio)
