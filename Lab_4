@@ -1,0 +1,73 @@
+import numpy as np
+import librosa
+import librosa.display
+import matplotlib.pyplot as plt
+import scipy.signal
+
+# Load speech sample
+file_path = '/LJ050-0269.wav'  # Replace with actual file path
+audio, sample_rate = librosa.load(file_path, sr=16000, mono=True)
+
+# Plot waveform
+def plot_waveform(signal, sr, title="Waveform"):
+    plt.figure(figsize=(10, 4))
+    librosa.display.waveshow(signal, sr=sr)
+    plt.title(title)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    plt.show()
+
+plot_waveform(audio, sample_rate, "Speech Signal Waveform")
+
+# Frame-wise processing parameters
+frame_length = int(0.025 * sample_rate)  # 25 ms frame length
+hop_length = int(0.01 * sample_rate)  # 10 ms hop length
+
+# Apply Hamming window
+hamming_window = np.hamming(frame_length)
+def frame_signal(signal, frame_length, hop_length):
+    return librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length).T
+
+frames = frame_signal(audio, frame_length, hop_length)
+
+# Compute time-domain features
+STE = np.sum((frames * hamming_window) ** 2, axis=1)
+STM = np.sum(np.abs(frames * hamming_window), axis=1)
+ZCR = np.sum(np.abs(np.diff(np.sign(frames), axis=1)), axis=1) / (2 * frame_length)
+
+def autocorrelation(frame):
+    return np.correlate(frame, frame, mode='full')[len(frame) - 1:]
+
+autocorr = np.array([autocorrelation(frame) for frame in frames])
+
+def amdf(frame):
+    return np.array([np.sum(np.abs(frame - np.roll(frame, lag))) for lag in range(len(frame))])
+
+def amsdf(frame):
+    return np.array([np.sum((frame - np.roll(frame, lag)) ** 2) for lag in range(len(frame))])
+
+AMDF = np.array([amdf(frame) for frame in frames])
+AMSDF = np.array([amsdf(frame) for frame in frames])
+
+# Plot features
+def plot_feature(feature, title):
+    plt.figure(figsize=(10, 4))
+    plt.plot(feature)
+    plt.title(title)
+    plt.xlabel('Frame Index')
+    plt.ylabel('Magnitude')
+    plt.show()
+
+plot_feature(STE, "Short-Time Energy (STE)")
+plot_feature(STM, "Short-Time Magnitude (STM)")
+plot_feature(ZCR, "Zero-Crossing Rate (ZCR)")
+plot_feature(autocorr[:, 0], "Autocorrelation")
+plot_feature(AMDF[:, 0], "AMDF")
+plot_feature(AMSDF[:, 0], "AMSDF")
+
+# Observations
+print("\nObservations:")
+print("- Voiced segments generally have higher STE and STM values compared to unvoiced segments.")
+print("- ZCR is higher in unvoiced segments due to frequent zero crossings.")
+print("- Autocorrelation is stronger for voiced speech, showing periodicity.")
+print("- AMDF and AMSDF values are lower for voiced speech due to periodicity in voiced sounds.")
