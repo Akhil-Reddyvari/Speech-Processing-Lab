@@ -1,0 +1,180 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import librosa
+import librosa.display
+import scipy.signal
+
+# -------------------------
+# Utility functions for pitch estimation
+# -------------------------
+
+def autocorrelation_pitch(frame, sr, fmin=50, fmax=400):
+    """
+    Estimate pitch using autocorrelation for a single frame.
+    sr: sample rate, fmin and fmax define the search range (Hz).
+    """
+    # Compute autocorrelation
+    corr = np.correlate(frame, frame, mode='full')
+    corr = corr[len(corr)//2:]  # keep second half
+    # Define search bounds in samples
+    lag_min = int(sr / fmax)
+    lag_max = int(sr / fmin)
+    # Find the peak in the autocorrelation within bounds
+    if lag_max >= len(corr):
+        lag_max = len(corr)-1
+    peak_index = np.argmax(corr[lag_min:lag_max]) + lag_min
+    # Convert lag to frequency
+    pitch = sr / peak_index if peak_index != 0 else 0
+    return pitch
+
+def amdf_pitch(frame, sr, fmin=50, fmax=400):
+    """
+    Estimate pitch using the Average Magnitude Difference Function (AMDF).
+    """
+    # Define search bounds in samples
+    lag_min = int(sr / fmax)
+    lag_max = int(sr / fmin)
+    amdf_vals = np.zeros(lag_max - lag_min)
+    for i, lag in enumerate(range(lag_min, lag_max)):
+        amdf_vals[i] = np.mean(np.abs(frame[lag:] - frame[:-lag]))
+    # Find lag with minimum AMDF
+    best_lag = np.argmin(amdf_vals) + lag_min
+    pitch = sr / best_lag if best_lag != 0 else 0
+    return pitch
+
+def asmdf_pitch(frame, sr, fmin=50, fmax=400):
+    """
+    Estimate pitch using the Average Squared Magnitude Difference Function (ASMDF).
+    """
+    lag_min = int(sr / fmax)
+    lag_max = int(sr / fmin)
+    asmdf_vals = np.zeros(lag_max - lag_min)
+    for i, lag in enumerate(range(lag_min, lag_max)):
+        asmdf_vals[i] = np.mean((frame[lag:] - frame[:-lag])**2)
+    best_lag = np.argmin(asmdf_vals) + lag_min
+    pitch = sr / best_lag if best_lag != 0 else 0
+    return pitch
+
+# -------------------------
+# Load Speech Signal
+# -------------------------
+file_path = '/LJ050-0268.wav'  # Replace with your file path
+audio, sr = librosa.load(file_path, sr=16000)  # Use 16 kHz sampling rate
+
+# Plot the original waveform
+plt.figure(figsize=(12, 3))
+librosa.display.waveshow(audio, sr=sr)
+plt.title('Original Speech Waveform')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.tight_layout()
+plt.show()
+
+# -------------------------
+# Frame the Signal
+# -------------------------
+# Frame parameters: 25ms frame with 10ms overlap
+frame_length = int(0.025 * sr)
+frame_step   = int(0.010 * sr)
+hamming_window = np.hamming(frame_length)
+
+def frame_signal(signal, frame_length, frame_step):
+    num_frames = int((len(signal) - frame_length) / frame_step) + 1
+    frames = np.stack([signal[i * frame_step : i * frame_step + frame_length] for i in range(num_frames)])
+    return frames * hamming_window
+
+frames = frame_signal(audio, frame_length, frame_step)
+num_frames = frames.shape[0]
+frame_times = (np.arange(num_frames) * frame_step + frame_length/2) / sr
+
+# -------------------------
+# PART-1: Pitch Estimation using Different Methods
+# -------------------------
+pitches_ac = []    # autocorrelation pitch
+pitches_amdf = []  # AMDF pitch
+pitches_asmdf = [] # ASMDF pitch
+
+for frame in frames:
+    pitches_ac.append(autocorrelation_pitch(frame, sr))
+    pitches_amdf.append(amdf_pitch(frame, sr))
+    pitches_asmdf.append(asmdf_pitch(frame, sr))
+
+pitches_ac = np.array(pitches_ac)
+pitches_amdf = np.array(pitches_amdf)
+pitches_asmdf = np.array(pitches_asmdf)
+
+# Plot pitch contours estimated by different methods
+plt.figure(figsize=(12, 8))
+plt.plot(frame_times, pitches_ac, label='Autocorrelation', color='b')
+plt.plot(frame_times, pitches_amdf, label='AMDF', color='g')
+plt.plot(frame_times, pitches_asmdf, label='ASMDF', color='r')
+plt.xlabel('Time (s)')
+plt.ylabel('Pitch (Hz)')
+plt.title('Estimated Pitch Contours')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+print("Part 1 Observations:")
+print("- The autocorrelation method typically produces a smooth pitch contour.")
+print("- AMDF and ASMDF contours may be noisier or slightly shifted due to the difference measures.")
+print("- In voiced regions, all methods should converge to a similar pitch value, whereas in unvoiced regions (or silence) the estimates may vary or drop.")
+
+# -------------------------
+# PART-2: FFT and STFT Analysis for Pitch, Harmonics and Formants
+# -------------------------
+
+# III. FFT Analysis
+fft_data = np.fft.fft(audio)
+freqs = np.fft.fftfreq(len(fft_data), 1/sr)
+# Only use positive frequencies
+pos_mask = freqs > 0
+fft_magnitude = np.abs(fft_data)[pos_mask]
+freqs_pos = freqs[pos_mask]
+
+plt.figure(figsize=(12, 4))
+plt.plot(freqs_pos, fft_magnitude, color='m')
+plt.title('FFT Magnitude Spectrum')
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Magnitude')
+plt.xlim(0, 5000)  # zoom into a region that includes pitch and formants
+plt.tight_layout()
+plt.show()
+
+print("FFT Analysis Observations:")
+print("- The lowest peak (or highest energy concentration) in the low-frequency range corresponds to the pitch.")
+print("- Harmonics appear as additional peaks at integer multiples of the pitch frequency.")
+print("- Formants are visible as broader spectral peaks in frequency regions (often above the fundamental).")
+
+# IV. STFT Analysis: Spectrogram for Pitch Contour and Formants
+D = librosa.stft(audio, n_fft=2048, hop_length=512)
+D_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
+plt.figure(figsize=(12, 6))
+librosa.display.specshow(D_db, sr=sr, hop_length=512, x_axis='time', y_axis='hz', cmap='viridis')
+plt.colorbar(format='%+2.0f dB')
+plt.title('STFT Spectrogram (Pitch & Formant Visualization)')
+plt.tight_layout()
+plt.show()
+
+print("STFT Analysis Observations:")
+print("- The spectrogram shows time-varying frequency content.")
+print("- The pitch contour (from Part 1) can be overlaid (if desired) to show the fundamental frequency over time.")
+print("- Formants appear as horizontal bands (bright regions) in the spectrogram, representing resonant frequencies of the vocal tract.")
+print("- Harmonics are visible as multiple bands at multiples of the pitch frequency.")
+
+# Optionally, overlay the pitch contour on the spectrogram
+plt.figure(figsize=(12, 6))
+librosa.display.specshow(D_db, sr=sr, hop_length=512, x_axis='time', y_axis='hz', cmap='viridis')
+plt.colorbar(format='%+2.0f dB')
+plt.plot(frame_times, pitches_ac, color='w', label='Pitch (Autocorr)')
+plt.title('STFT Spectrogram with Pitch Contour')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+print("Overall Analysis:")
+print("- Both FFT and STFT analyses help identify pitch, harmonics, and formants based on their frequency characteristics.")
+print("- The pitch (fundamental frequency) is typically the strongest component in the lower frequency range, with harmonics appearing at multiples of this value.")
+print("- Formants are distinct resonances that are visually distinguishable as horizontal bands in the spectrogram.")
+print("- STFT provides a time-varying view, making it easier to track how pitch and formant frequencies change over time, which is useful for analyzing dynamic speech.")
+
