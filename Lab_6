@@ -1,0 +1,72 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import librosa
+import librosa.display
+
+# Load the speech file
+file_path = '/content/LJ050-0271.wav'  # Replace with your actual file
+audio, sr = librosa.load(file_path, sr=16000)
+
+# Select a frame for analysis (e.g., a voiced segment from 1s to 1.03s)
+start_time = 1.0
+frame_duration = 0.03  # 30 ms frame
+start_sample = int(start_time * sr)
+frame_length = int(frame_duration * sr)
+frame = audio[start_sample:start_sample + frame_length]
+
+# Apply Hamming window
+windowed_frame = frame * np.hamming(len(frame))
+
+# Compute real cepstrum
+spectrum = np.fft.fft(windowed_frame)
+log_magnitude = np.log(np.abs(spectrum) + 1e-10)  # Avoid log(0)
+real_cepstrum = np.fft.ifft(log_magnitude).real
+
+# Plot the cepstrum
+quefrency_axis = np.arange(len(real_cepstrum)) / sr
+
+plt.figure(figsize=(10, 4))
+plt.plot(quefrency_axis[:200], real_cepstrum[:200])
+plt.title('Real Cepstrum of a Speech Frame')
+plt.xlabel('Quefrency (seconds)')
+plt.ylabel('Amplitude')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Pitch estimation (search between 5ms to 20ms -> 80 to 320 samples at 16kHz)
+min_pitch = int(0.005 * sr)
+max_pitch = int(0.02 * sr)
+pitch_range = real_cepstrum[min_pitch:max_pitch]
+peak_index = np.argmax(pitch_range) + min_pitch
+pitch_period = peak_index / sr
+f0 = sr / peak_index
+
+print(f"Estimated pitch period: {pitch_period:.4f} sec")
+print(f"Estimated Fundamental Frequency (F0): {f0:.2f} Hz")
+
+# Cepstral liftering
+# Low-pass: keep vocal tract (slow variations)
+lifter_cutoff = 30  # quefrency index cutoff
+cepstrum_lp = np.copy(real_cepstrum)
+cepstrum_lp[lifter_cutoff:] = 0
+spectrum_vt = np.fft.fft(cepstrum_lp).real
+
+# High-pass: keep excitation (fast variations)
+cepstrum_hp = np.copy(real_cepstrum)
+cepstrum_hp[:lifter_cutoff] = 0
+spectrum_exc = np.fft.fft(cepstrum_hp).real
+
+# Plot vocal tract vs excitation
+plt.figure(figsize=(12, 4))
+plt.subplot(1, 2, 1)
+plt.plot(spectrum_vt)
+plt.title('Vocal Tract (Low Quefrency)')
+plt.xlabel('Frequency Bin')
+
+plt.subplot(1, 2, 2)
+plt.plot(spectrum_exc)
+plt.title('Excitation Source (High Quefrency)')
+plt.xlabel('Frequency Bin')
+plt.tight_layout()
+plt.show()
