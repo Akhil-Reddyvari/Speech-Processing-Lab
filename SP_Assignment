@@ -1,0 +1,87 @@
+import torch
+import torchaudio
+import matplotlib.pyplot as plt
+from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+from torchviz import make_dot
+from jiwer import wer
+
+audio_path = "/content/LJ001-0031.wav"
+waveform, sample_rate = torchaudio.load(audio_path)
+
+if sample_rate != 16000:
+    waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(waveform)
+    sample_rate = 16000
+
+plt.figure(figsize=(10, 2))
+plt.plot(waveform.t().numpy())
+plt.title("Waveform")
+plt.show()
+
+processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
+model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h").eval()
+print(model)
+
+inputs = processor(waveform.squeeze().numpy(), sampling_rate=sample_rate, return_tensors="pt", padding=True)
+with torch.no_grad():
+    logits = model(**inputs).logits
+
+pred_ids = torch.argmax(logits, dim=-1)
+transcription = processor.decode(pred_ids[0])
+print("Transcription Output:", transcription)
+
+reference = "Printing in the only sense with which we are at present concerned differs from most if not from all the arts and crafts represented in the Exhibition"
+print("Word Error Rate (WER):", wer(reference.lower(), transcription.lower()))
+
+dot = make_dot(logits, params=dict(list(model.named_parameters())))
+dot.format = 'png'
+dot.render('wav2vec2_architecture')
+print("Computation graph saved as 'wav2vec2_architecture.png'")
+
+torch.onnx.export(
+    model,
+    (inputs["input_values"],),
+    "wav2vec2.onnx",
+    input_names=["input_values"],
+    output_names=["logits"],
+    dynamic_axes={"input_values": {0: "batch_size", 1: "sequence"}},
+    opset_version=17
+)
+print("ONNX model saved as 'wav2vec2.onnx'")
+
+import torch
+import torchaudio
+import matplotlib.pyplot as plt
+from torchaudio.pipelines import EMFORMER_RNNT_BASE_LIBRISPEECH
+from jiwer import wer
+
+# Load Emformer RNN-T pipeline components
+bundle = EMFORMER_RNNT_BASE_LIBRISPEECH
+feature_extractor = bundle.get_feature_extractor()
+decoder = bundle.get_decoder()
+token_processor = bundle.get_token_processor()
+
+# Load and preprocess audio
+audio_path = "/content/LJ001-0031.wav"
+waveform, sr = torchaudio.load(audio_path)
+if sr != 16000:
+    waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
+
+# Visualize waveform
+plt.figure(figsize=(10, 2))
+plt.plot(waveform[0].numpy())
+plt.title("Waveform")
+plt.show()
+
+# Prepare waveform and extract features
+waveform = waveform.squeeze(0)
+with torch.no_grad():
+    features, lengths = feature_extractor(waveform)
+
+# Decode and process output
+hypotheses = decoder(features, lengths, beam_width=10)
+transcription = token_processor(hypotheses[0][0])
+print("Transcription:", transcription)
+
+# Compute WER
+reference = "Printing in the only sense with which we are at present concerned differs from most if not from all the arts and crafts represented in the Exhibition"
+print("Word Error Rate (WER):", wer(reference.lower(), transcription.lower()))
